@@ -92,7 +92,7 @@ def find_clusters_circular(A,device=None):
     
     for i,c in enumerate(uniq):
         if c==-1: continue
-        clusters[clusters==c]=i+1
+        clusters[clusters==c]=i
     
     return clusters
 
@@ -143,6 +143,6 @@ def find_clusters_bounded(A,device=None):
     uniq = clusters.unique()
     for i,c in enumerate(uniq):
         if c==-1: continue
-        clusters[clusters==c]=i+1
+        clusters[clusters==c]=i
     
     return clusters
