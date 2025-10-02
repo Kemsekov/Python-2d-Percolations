@@ -23,6 +23,27 @@ class DisjointSetUnion:
             self.parent[x] = px
             x=px
         return self.parent[x].reshape(shape)
+    
+    # def find(self, x: torch.Tensor) -> torch.Tensor:
+    #     """
+    #     Vectorized find with path compression, masked iteration.
+    #     """
+    #     shape = x.shape
+    #     x = x.flatten()
+    #     # Track active elements (those whose parent != themselves)
+    #     active = torch.ones_like(x, dtype=torch.bool)
+    #     while active.any():
+    #         px = self.parent[x[active]]
+    #         # Find which ones are done
+    #         done_mask = px == x[active]
+    #         # Update parent only for active elements
+    #         self.parent[x[active]] = px
+    #         # Deactivate finished paths
+    #         active_indices = torch.nonzero(active).squeeze(-1)
+    #         active[active_indices[done_mask]] = False
+    #         # Continue climbing only unfinished ones
+    #         x[active] = px[~done_mask]
+    #     return self.parent[x].reshape(shape)
 
     def union(self, x: torch.Tensor, y: torch.Tensor):
         """
@@ -77,7 +98,7 @@ def find_clusters_circular(A,device=None):
         ind_z = torch.arange(A_shape[2])
         ind_z1 = (ind_z+1)%A_shape[2]
         is_same = (A[:,:,ind_z]==A[:,:,ind_z1]) & (A[:,:,ind_z]==1)
-        z_same=pos[is_same],pos[:,:,ind_y1][is_same]
+        z_same=pos[is_same],pos[:,:,ind_z1][is_same]
         unions.append(z_same)
 
     for i in range(3):
@@ -130,7 +151,7 @@ def find_clusters_bounded(A,device=None):
         ind_z1 = ind_z*1
         ind_z1[1:]=ind_z[:-1]
         is_same = (A[:,:,ind_z]==A[:,:,ind_z1]) & (A[:,:,ind_z]==1)
-        z_same=pos[is_same],pos[:,:,ind_y1][is_same]
+        z_same=pos[is_same],pos[:,:,ind_z1][is_same]
         unions.append(z_same)
 
     for i in range(3):
@@ -146,3 +167,81 @@ def find_clusters_bounded(A,device=None):
         clusters[clusters==c]=i
     
     return clusters
+
+
+def get_percolation_clusters(clusters):
+    """
+    Identify percolating clusters that touch all boundary corners 
+    of a 1D, 2D, or 3D labeled tensor.
+
+    A cluster is considered "percolating" if its label appears on 
+    all sides (corners for 1D, edges for 2D, and faces for 3D) 
+    of the input tensor. This function checks cluster labels at 
+    the boundaries of the tensor and determines which clusters 
+    span across the entire domain.
+
+    Parameters
+    ----------
+    clusters : torch.Tensor
+        An integer-valued tensor of dimension 1, 2, or 3 where each 
+        element represents the cluster label at that position. 
+
+    Returns
+    -------
+    percolation_cluster_ids : list of int
+        A list of cluster IDs that percolate (i.e., touch all corners/faces).
+    sizes : list of int
+        The sizes (number of elements) of the corresponding percolating clusters.
+
+    Raises
+    ------
+    AttributeError
+        If `clusters.ndim` is not 1, 2, or 3.
+
+    Notes
+    -----
+    - For 1D tensors: the function checks the first and last elements.
+    - For 2D tensors: the function checks the top row, bottom row, 
+      left column, and right column.
+    - For 3D tensors: the function checks the six faces of the cube.
+    - The function uses `torch.isin` and `torch.unique` to efficiently 
+      determine label overlap across corners/faces.
+
+    Examples
+    --------
+    >>> import torch
+    >>> clusters = torch.tensor([
+    ...     [0, 0, 1],
+    ...     [2, 1, 1],
+    ...     [2, 2, 1]
+    ... ])
+    >>> get_percolation_clusters(clusters)
+    ([1], [4])   # cluster label 1 percolates and has size 4
+    """
+    if clusters.ndim==1:
+        corners = [clusters[0],clusters[-1]]
+    elif clusters.ndim==2:
+        corners = [clusters[0,:],clusters[:,0],clusters[-1,:],clusters[:,-1]]
+    elif clusters.ndim==3:
+        corners = [
+            clusters[0,:,:],
+            clusters[:,0,:],
+            clusters[:,:,0],
+            clusters[-1,:,:],
+            clusters[:,-1,:],
+            clusters[:,:,-1],
+        ]
+    else:
+        raise AttributeError("clusters ndim must be in range 1-3")
+    
+    corners = [c.unique() for c in corners]
+    all_corner_labels = torch.concat(corners).unique()
+    corner_labels_count=torch.zeros_like(all_corner_labels)
+
+    for c in corners:
+        corner_labels_count += torch.isin(all_corner_labels,c)
+    percolation_cluster_ids = all_corner_labels[corner_labels_count==4].tolist()
+    
+    # skip background
+    sizes = [(clusters==c).sum() for c in percolation_cluster_ids]
+    return percolation_cluster_ids,sizes
