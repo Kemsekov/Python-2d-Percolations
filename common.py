@@ -245,3 +245,41 @@ def get_percolation_clusters(clusters):
     # skip background
     sizes = [(clusters==c).sum() for c in percolation_cluster_ids]
     return percolation_cluster_ids,sizes
+
+def __find(x, labels):
+    while torch.any(labels[x] != x):
+        labels[x] = labels[labels[x]]  # path compression
+        x = labels[x]
+    return x.clone()
+
+def __union(x,y,labels):
+    ind = __find(x,labels)
+    labels[ind]=__find(y,labels)
+    
+def hoshen_kopelman(data):
+    label = torch.zeros_like(data,dtype=torch.int32)
+    largest_label = 0
+    rows,cols = data.shape
+    union_find_label = torch.arange(rows*cols,dtype=torch.int32)
+    for x in range(rows):
+        for y in range(cols):
+            if data[x,y]==0: continue
+        
+            #another way is to make bounded check
+            left = 0 if x-1<0 else label[x-1,y]
+            above = 0 if y-1<0 else label[x,y-1]
+            
+            if left==0 and above==0:
+                largest_label+=1
+                label[x,y]=largest_label
+            elif left!=0 and above==0:
+                label[x,y]=__find(left,union_find_label)
+            elif left==0 and above!=0:
+                label[x,y]=__find(above,union_find_label)
+            else:
+                __union(left,above,union_find_label)
+                label[x,y] = __find(min(left,above),union_find_label)
+    
+    mask = data!=0
+    label[mask]=__find(label[mask],union_find_label)
+    return label
